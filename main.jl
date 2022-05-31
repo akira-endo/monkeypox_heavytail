@@ -168,7 +168,7 @@ palette=:vikO,color=(1:4)'.*50,linewidth=1.5)
 hline!(R0capplot,[1],linestyle=:dot,color=:black,linealpha=1,label="")
 vline!(R0capplot,[quantile(deg3w_msm,0.99)],color=:green,label="",linealpha=0.5,linestyle=:dash) |> display
 
-#
+# Eigenvector analysis
 R_msm=meanm1sampling(edeg3w_msm)
 R_other=meanm1sampling(edeg3w_other)
 r_other=mean(rand(deg3w_otheravg,1000000))
