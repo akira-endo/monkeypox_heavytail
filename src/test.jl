@@ -37,7 +37,7 @@ for θ in 0.1:0.1:2
     gammad = truncated(Gamma(2, θ); lower = θ)
     gammasamples=rand(gammad,100000)
     @test isapprox(R0(edtw), mean(max.(0,gammasamples.-1)); rtol=0.01) || 
-        (isapprox(R0(edtw), mean(max.(0,gammasamples.-1)); atol=1e-4) && isapprox(R0(edtw), mean(max.(0,gammasamples.-1)); rtol=0.2))
+        (isapprox(R0(edtw), mean(max.(0,gammasamples.-1)); atol=1e-3) && isapprox(R0(edtw), mean(max.(0,gammasamples.-1)); rtol=0.2))
 end
   
 
