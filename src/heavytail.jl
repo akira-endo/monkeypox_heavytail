@@ -1,6 +1,9 @@
 using LogExpFunctions
+using LinearAlgebra
 using StatsBase
+using SpecialFunctions
 using Distributions
+using Random
 PoissonCap(λ)=Poisson(min(λ,typemax(Int32)))
 
 function simulatetillsize(edeg::Any, size::Integer, SAR::Number = 0.1; seed = 1, iter = 100000, init_deg=nothing, incidence=false, total=false, samples = 1000)
@@ -12,7 +15,6 @@ function simulatetillsize(edeg::Any, size::Integer, SAR::Number = 0.1; seed = 1,
         activecases=seed
         if !isnothing(init_deg)
             # first one generation with init_deg instead of edeg
-            #sum_deg = max.(0, floor.(Int,rand(init_deg,activecases))) |>sum # sum of excess degrees of seeds. prob = cdf(x+1)-cdf(x) if edeg is a continuous distribution.
             sum_deg = max.(0, rand.(PoissonCap.(rand(init_deg,activecases)))) |>sum # sum of excess degrees of seeds. prob = cdf(x+1)-cdf(x) if edeg is a continuous distribution.
             offsprings=Binomial(sum_deg,SAR)|>rand
             if(offsprings==0) # extinct
@@ -25,7 +27,6 @@ function simulatetillsize(edeg::Any, size::Integer, SAR::Number = 0.1; seed = 1,
             if incidence push!(incidencerecord[i],activecases) end
         end
         while(totalcases<size)
-            #sum_edeg = max.(0, floor.(Int,rand(edeg,activecases)).-1) |>sum # sum of excess degrees of seeds. prob = cdf(x+1)-cdf(x) if edeg is a continuous distribution.
             sum_edeg = max.(0, rand.(PoissonCap.(rand(edeg,activecases))).-1) |>sum # sum of excess degrees of seeds. prob = cdf(x+1)-cdf(x) if edeg is a continuous distribution.
             offsprings=Binomial(sum_edeg,SAR)|>rand
             if(offsprings==0) # extinct
@@ -99,11 +100,6 @@ function ISR_Weibull(d::EDTWeibull, n::Integer, weightfun::Function = identity, 
     sample(samples,weights,n,replace=true)
 end
 Weibull2(α,κ)=Weibull(α, (α/κ)^(1/α)) # alternative parameterization where κ is the approximate Pareto shape parameter
-function Weibull3(λ,κ) # alternative parameterization where λ = θ^α
-    α=λ*κ
-    θ=(α/κ)^(1/α)
-    Weibull(α, θ)
-end
 
 function R0(tweibull::Truncated{<:Weibull}, SAR=1; logvalue=false)
     α,θ,tr_lower, tr_1 = tweibull.untruncated.α, tweibull.untruncated.θ, (tweibull.lower/tweibull.untruncated.θ)^tweibull.untruncated.α, 1/tweibull.untruncated.θ^tweibull.untruncated.α
@@ -118,8 +114,8 @@ function R0(tweibull::Truncated{<:Weibull}, SAR=1; logvalue=false)
         return(exp(logR0))
     end
 end
-R0(α,κ,lower)=R0(truncated(Weibull2(α,κ),lower=lower))
-meanm1sampling(d;iter=100000)=mean(max.(0,rand(d,iter).-1))
+
+meanm1sampling(d;iter=100000)=mean(max.(0,rand(d,iter).-1)) # evaluates E[max(0,x-1)|x ~ d]
 κ2θ(α,κ)=(α/κ)^(1/α)
 
 function eigenNGM(SAR,relR,p_m2o,R_msm,R_other,r_other)
