@@ -158,7 +158,7 @@ xlabel = ["" "" "simulated number of partners over 21 days"],bottom_margin=[-2mm
 Random.seed!(2022)
 αrange=0.04:0.01:100
 sarrange=[0.05,0.1,0.2,0.5]
-κrange=repeat([0.6],length(sarrange))
+κrange=repeat([[κ_msm],length(sarrange))
 R0s=repeat(sarrange,inner=length(κrange)÷length(sarrange))'.*max.(1e-15,[R0(truncated(Weibull(α,κ2θ(α,κ)*inf_period/365),lower=inf_period/365),logvalue=false) for α in αrange, κ in κrange])
 xs= [quantile(truncated(Weibull(α,κ2θ(α,κ)*inf_period/365);lower=inf_period/365),0.99) for α in αrange, κ in κrange]
 R0capplot=plot(xs,R0s,yaxis=:log,ylim=(0.01,100),xlim=(0,15), 
