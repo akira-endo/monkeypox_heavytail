@@ -39,11 +39,3 @@ for θ in 0.1:0.1:2
     @test isapprox(R0(edtw), mean(max.(0,gammasamples.-1)); rtol=0.01) || 
         (isapprox(R0(edtw), mean(max.(0,gammasamples.-1)); atol=1e-3) && isapprox(R0(edtw), mean(max.(0,gammasamples.-1)); rtol=0.2))
 end
-  
-for θ in 0.1:0.1:1
-    tw = truncated(Weibull(1, θ); lower = θ)
-    gammad2 = Gamma(2, θ)
-    gammad3 = Gamma(3, θ)
-    @test R0(tw) ≈ ((2/θ)*(1-cdf(gammad3,max(1,θ)))-(1-cdf(gammad2,max(1,θ))))/(1-cdf(gammad2,θ))
-end
-
