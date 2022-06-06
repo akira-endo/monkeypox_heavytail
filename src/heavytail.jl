@@ -86,6 +86,8 @@ function rand_TWeibull(rng::AbstractRNG, d::Truncated{<:Weibull}) # inverse meth
     (-θ^α*logqs)^(1/α)
 end
 
+TWquantile(tw::Truncated{<:Weibull},x::Real)=(1/tw.untruncated.α)*log1pexp(tw.untruncated.α*log(tw.untruncated.θ)+log(-log(1-x)))|>exp
+
 function ISR(d::Sampleable, n::Integer, weightfun::Function, samplesize = 1000)# importance sampling resampling
     ss=max(2n,samplesize)
     samples=rand(d, ss)
@@ -101,18 +103,25 @@ function ISR_Weibull(d::EDTWeibull, n::Integer, weightfun::Function = identity, 
 end
 Weibull2(α,κ)=Weibull(α, (α/κ)^(1/α)) # alternative parameterization where κ is the approximate Pareto shape parameter
 
+log_gamma(a, x) = log(gamma_inc(a, x)[2]) + loggamma(a) # to avoid error with small alpha
+
 function R0(tweibull::Truncated{<:Weibull}, SAR=1; logvalue=false)
     α,θ,tr_lower, tr_1 = tweibull.untruncated.α, tweibull.untruncated.θ, (tweibull.lower/tweibull.untruncated.θ)^tweibull.untruncated.α, 1/tweibull.untruncated.θ^tweibull.untruncated.α
     if tweibull.lower≥1
-        logR0p1=log(θ)+loggamma((α+2)/α,tr_lower)-loggamma((α+1)/α,tr_lower)
+        logR0p1=log(θ)+log_gamma((α+2)/α,tr_lower)-log_gamma((α+1)/α,tr_lower)
         if logvalue return(logexpm1(logR0p1)) end
         return(exp(logR0p1)-1)
     else
-        logR0=loggamma((α+1)/α,tr_1) - loggamma((α+1)/α,tr_lower) +
-        logexpm1(max(0.0,log(θ) + loggamma((α+2)/α,tr_1)-loggamma((α+1)/α,tr_1) ))
+        logR0=log_gamma((α+1)/α,tr_1) - log_gamma((α+1)/α,tr_lower) +
+        logexpm1(max(0.0,log(θ) + log_gamma((α+2)/α,tr_1)-log_gamma((α+1)/α,tr_1) ))
         if logvalue return(logR0) end
         return(exp(logR0))
     end
+end
+
+function Distributions.mean(tweibull::Truncated{<:Weibull})
+    α,θ,tr_lower = tweibull.untruncated.α, tweibull.untruncated.θ, (tweibull.lower/tweibull.untruncated.θ)^tweibull.untruncated.α
+    exp(log(θ)+log_gamma((α+1)/α,tr_lower)-log_gamma(1,tr_lower))
 end
 
 meanm1sampling(d;iter=100000)=mean(max.(0,rand(d,iter).-1)) # evaluates E[max(0,x-1)|x ~ d]
