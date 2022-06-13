@@ -6,7 +6,7 @@ using Distributions
 using Random
 PoissonCap(λ)=Poisson(min(λ,typemax(Int32)))
 
-function simulatetillsize(edeg::Any, size::Integer, SAR::Number = 0.1; seed = 1, iter = 100000, init_deg=nothing, incidence=false, total=false, samples = 1000)
+function simulatetillsize(edeg::Union{<:Sampleable,<:AbstractArray}, size::Integer, SAR::Number = 0.1; seed = 1, iter = 100000, init_deg=nothing, incidence=false, total=false, samples = 1000)
     n_extinct=0
     incidencerecord = [Int[] for i in 1:samples]
     totalrecord = fill(0,samples)
@@ -19,7 +19,7 @@ function simulatetillsize(edeg::Any, size::Integer, SAR::Number = 0.1; seed = 1,
             offsprings=Binomial(sum_deg,SAR)|>rand
             if(offsprings==0) # extinct
                 n_extinct+=1
-                if total totalrecord[i]=totalcases end
+                if total totalrecord[Int((i-1)÷(iter/samples)+1)]=totalcases end
                 continue
             end
             totalcases+=offsprings
@@ -37,13 +37,63 @@ function simulatetillsize(edeg::Any, size::Integer, SAR::Number = 0.1; seed = 1,
             activecases=offsprings
             if incidence push!(incidencerecord[i],activecases) end
         end
-            if total totalrecord[i]=totalcases end
+            if total totalrecord[Int((i-1)÷(iter/samples)+1)]=totalcases end
     end
     if incidence||total return((prob=1-n_extinct/iter, incidencerecord=incidencerecord, totalrecord = totalrecord)) end
     1-n_extinct/iter
 end
 
-simulatetillsize(edeg::Any, size::Integer, SAR::AbstractArray; seed = 1, iter = 100000, init_deg=nothing, incidence=false, samples = 1000) = simulatetillsize.(Ref(edeg), size,SAR; seed = seed, iter = iter, init_deg=init_deg, incidence=incidence, samples = samples)
+function simulatetillsizehetero(edeg1::Union{<:Sampleable,<:AbstractArray},edeg2::Union{<:Sampleable,<:AbstractArray}, size::Integer, SAR::Number = 0.1; seed = 1, iter = 100000, init_deg=nothing, incidence=false, total=false, samples = 1000)
+    n_extinct=0
+    incidencerecord = [Int[] for i in 1:samples]
+    totalrecord = fill(0,samples)
+    for i in 1:iter
+        totalcases=seed
+        activecases=seed
+        issex1 = true
+        if !isnothing(init_deg)
+            # first one generation with init_deg instead of edeg
+            sum_deg = max.(0, rand.(PoissonCap.(rand(init_deg,activecases)))) |>sum # sum of excess degrees of seeds. prob = cdf(x+1)-cdf(x) if edeg is a continuous distribution.
+            offsprings=Binomial(sum_deg,SAR)|>rand
+            if(offsprings==0) # extinct
+                n_extinct+=1
+                if total totalrecord[Int((i-1)÷(iter/samples)+1)]=totalcases end
+                continue
+            end
+            totalcases+=offsprings
+            activecases=offsprings
+            if incidence push!(incidencerecord[i],activecases) end
+            issex1 = !issex1
+        end
+        while(totalcases<size)
+            edeg=ifelse(issex1,edeg1,edeg2)
+            sum_edeg = max.(0, rand.(PoissonCap.(rand(edeg,activecases))).-1) |>sum # sum of excess degrees of seeds. prob = cdf(x+1)-cdf(x) if edeg is a continuous distribution.
+            offsprings=Binomial(sum_edeg,SAR)|>rand
+            if(offsprings==0) # extinct
+                n_extinct+=1
+                break
+            end
+            totalcases+=offsprings
+            activecases=offsprings
+            if incidence push!(incidencerecord[i],activecases) end
+            issex1 = !issex1
+        end
+            if total totalrecord[Int((i-1)÷(iter/samples)+1)]=totalcases end
+    end
+    if incidence||total return((prob=1-n_extinct/iter, incidencerecord=incidencerecord, totalrecord = totalrecord)) end
+    1-n_extinct/iter
+end
+
+function simulatetillsize(edeg1::Union{<:Sampleable,<:AbstractArray},edeg2::Union{<:Sampleable,<:AbstractArray}, size::Integer, SAR::Number = 0.1; seed = 1, iter = 100000, init_deg1=nothing,init_deg2=nothing, incidence=false, total=false, samples = 1000)
+    seed1=rand(Binomial(seed,0.5))
+    sim1=simulatetillsizehetero(edeg1,edeg2, size, SAR; seed = seed1, iter = iter, init_deg=init_deg1, incidence=incidence, total=true, samples = samples)
+    sim2=simulatetillsizehetero(edeg1,edeg2, size, SAR; seed = seed-seed1, iter = iter, init_deg=init_deg2, incidence=incidence, total=true, samples = samples)
+    totalrecord=sim1.totalrecord.+sim2.totalrecord
+    if incidence||total return((prob=mean(<(size),totalrecord), incidencerecord=[sim1.incidencerecord;sim2.incidencerecord], totalrecord = totalrecord)) end
+    mean(≥(size),totalrecord)
+end
+
+simulatetillsize(edeg::Union{<:Sampleable,<:AbstractArray}, size::Integer, SAR::AbstractArray; seed = 1, iter = 100000, init_deg=nothing, incidence=false, samples = 1000) = simulatetillsize.(Ref(edeg), size,SAR; seed = seed, iter = iter, init_deg=init_deg, incidence=incidence, samples = samples)
 
 struct EDTWeibull{T<:Truncated{<:Weibull},F}
     d::T
@@ -86,24 +136,37 @@ function rand_TWeibull(rng::AbstractRNG, d::Truncated{<:Weibull}) # inverse meth
     (-θ^α*logqs)^(1/α)
 end
 
-TWquantile(tw::Truncated{<:Weibull},x::Real)=(1/tw.untruncated.α)*log1pexp(tw.untruncated.α*log(tw.untruncated.θ)+log(-log(1-x)))|>exp
+TWquantile(tw::Truncated{<:Weibull},x::Real)=(1/tw.untruncated.α)*(tw.untruncated.α*log(tw.lower)+log1pexp(tw.untruncated.α*log(tw.untruncated.θ)+log(-log(1-x))-tw.untruncated.α*log(tw.lower)))|>exp
+Distributions.quantile(tw::Truncated{<:Weibull},x::Real)= if tw.lower>0 TWquantile(tw,x) else quantile(tw.untruncated,x) end
+Distributions.truncated(d::UnivariateDistribution; lower)=truncated(d, lower, Inf)
+function nonzeroPoissonquantile(d::UnivariateDistribution,x::Real, samplesize=10000) # quantile of Poisson(x) where x ~ tw
+    zeroprob=mean((exp∘(-)),(rand(d,samplesize)))
+    quantile(d,zeroprob+(1-zeroprob)*x)
+end
 
-function ISR(d::Sampleable, n::Integer, weightfun::Function, samplesize = 1000)# importance sampling resampling
+function ISR(d::Sampleable, n::Integer, weightfun::Function, samplesize = 10000)# importance sampling resampling
     ss=max(2n,samplesize)
     samples=rand(d, ss)
     weights=Weights(weightfun.(samples))
     sample(samples,weights,n,replace=true)
 end
-function ISR_Weibull(d::EDTWeibull, n::Integer, weightfun::Function = identity, samplesize = 1000)
+function ISR_Weibull(d::EDTWeibull, n::Integer, weightfun::Function = identity, samplesize = 10000)
     # importance sampling resampling for excess degree with truncated weibull degree dist. Default: ~ x * pdf(x)
     ss=max(2n,samplesize)
     samples=rand_TWeibull(d.d, ss)
     weights= Weights(weightfun.(samples))
     sample(samples,weights,n,replace=true)
 end
+
+function ISR_Weibull_finite(d::EDTWeibull, n::Integer, weightfun::Function = identity, samplesize = 1000000)
+    samples=rand_TWeibull(d.d, samplesize)
+    weights= Weights(weightfun.(samples))
+    sample(samples,weights,n,replace=false)
+end
+
 Weibull2(α,κ)=Weibull(α, (α/κ)^(1/α)) # alternative parameterization where κ is the approximate Pareto shape parameter
 
-log_gamma(a, x) = log(gamma_inc(a, x)[2]) + loggamma(a) # to avoid error with small alpha
+log_gamma(a, x) = log(gamma_inc(a, x,0)[2]) + loggamma(a) # to avoid error with small alpha
 
 function R0(tweibull::Truncated{<:Weibull}, SAR=1; logvalue=false)
     α,θ,tr_lower, tr_1 = tweibull.untruncated.α, tweibull.untruncated.θ, (tweibull.lower/tweibull.untruncated.θ)^tweibull.untruncated.α, 1/tweibull.untruncated.θ^tweibull.untruncated.α
@@ -127,10 +190,11 @@ end
 meanm1sampling(d;iter=100000)=mean(max.(0,rand(d,iter).-1)) # evaluates E[max(0,x-1)|x ~ d]
 κ2θ(α,κ)=(α/κ)^(1/α)
 
-function eigenNGM(SAR,relR,p_m2o,R_msm,R_other,r_other)
-    ngm=[SAR*R_msm*(1-p_m2o) 0 0
-        SAR*R_msm*p_m2o SAR*R_other SAR*r_other
-        relR*R_msm relR*R_msm relR*R_msm]
+function eigenNGM(SAR,relR,p_m2o,R_msm,R_hem,R_hew,r_hem,r_hew)
+    ngm=[SAR*R_msm*(1-p_m2o) 0 0 0
+        SAR*R_msm*p_m2o/2 0 SAR*R_hew SAR*r_hew/2
+        SAR*R_msm*p_m2o/2 SAR*R_hem 0 SAR*r_hem/2
+        relR*R_msm relR*R_msm relR*R_msm relR*R_msm]
     ev=eigen(ngm)
     (value=ev.values[end],vector=normalize(ev.vectors[:,end],1))
 end
