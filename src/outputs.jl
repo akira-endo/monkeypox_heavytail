@@ -198,7 +198,6 @@ findq(q,qs)=findmin(x->abs(x-q),qs)
 nonzeroPoisson(tw::Truncated{<:Weibull},n::Integer)=truncated.(Poisson.(ISR(tw,n,x->1-exp(-x))),lower=1)
 origdeg=rand.(nonzeroPoisson(deg3w_msm,150))#floor.(Int,rand(truncated(deg3w_msm.untruncated,lower=1),100))
 orig_1p=round(nonzeroPoissonquantile(deg3w_msm,0.99),digits=1)#round(quantile(origdeg,0.99),digits=0)
-#degs=[floor.(Int,rand(truncated(Weibull(α,κ2θ(α,κ)*inf_period/365);lower=1),100)) for α in αs, κ in κrange]
 degs=[rand.(nonzeroPoisson(truncated(Weibull(α,κ2θ(α,κ)*inf_period/365);lower=inf_period/365),150)) for α in αs, κ in κrange]
 freqs=[sum.([(==).(1:29);>(29)],Ref(x))./1000 for x in [[origdeg];degs]]
 plot(bar.(freqs, linealpha=0, 
@@ -223,12 +222,6 @@ hline!(R0capplot,[1],linestyle=:dot,color=:black,linealpha=1,label="")
 vline!(R0capplot,[nonzeroPoissonquantile(deg3w_msm,0.99)],color=:green,label="",linealpha=0.5,linestyle=:dash) |> display
 
 # Reduction in R0 for control
-#=Random.seed!(2022)
-αrange=BigFloat.(10 .^(-3:0.1:0))#0.1:0.001:10
-sarrange=[0.05,0.1,0.2,0.5]
-κrange=repeat([κ_msm],length(sarrange))
-R0s=repeat(sarrange,inner=length(κrange)÷length(sarrange))'.*max.(1e-15,[R0(truncated(Weibull(α,κ2θ(α,κ)*inf_period/365),lower=inf_period/365),logvalue=false) for α in αrange, κ in κrange])
-xs= [nonzeroPoissonquantile(truncated(Weibull(α,κ2θ(α,κ)*inf_period/365);lower=inf_period/365),0.99,100000) for α in αrange, κ in κrange]=#
 R0capplot=plot(xs,max.(0,min.(1,1 .- 1 ./R0s)),ylim=(0,1),xlim=(0,30), 
 xlabel="# of partners over 21 days at 1st percentile", ylabel="relative reduction in R₀ for control",
 legend=:topleft, label="SAR: ".*string.(sarrange'),
@@ -256,7 +249,6 @@ label=["MSM to non-MSM mixing: " "" "" ""].*string.(prange'),legend=:topleft) |>
 αrange=BigFloat.(10 .^(-3:0.05:0))#0.04:0.01:10
 κrange=repeat([0.77,0.66,0.88],2)
 R0s1=repeat([0.1,0.5],inner=length(κrange)÷2)'.*max.(1e-15,[R0(truncated(Weibull(α,κ2θ(α,κ)*inf_period/365),lower=inf_period/365),logvalue=false) for α in αrange, κ in κrange])
-#xs= [quantile(truncated(Weibull(α,κ2θ(α,κ)*inf_period/365);lower=1),0.99,100) for α in αrange, κ in κrange]
 xs= [nonzeroPoissonquantile(truncated(Weibull(α,κ2θ(α,κ)*inf_period/365);lower=inf_period/365),0.99,outbreak_iters) for α in αrange, κ in κrange]
 
 labels="κ: ".*(x->string(x[1])*"–"*string(x[2]))(κrange[2:3])
