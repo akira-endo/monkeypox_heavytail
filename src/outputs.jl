@@ -1,4 +1,6 @@
+using CSV
 using Distributions
+using DataFrames
 using LinearAlgebra
 using Measures
 using Plots
@@ -6,6 +8,7 @@ using Random
 using SpecialFunctions
 using StatsPlots
 using StatsBase
+using ProgressBars
 include("heavytail.jl")
 include("outbreaklikelihood.jl")
 gr(fontfamily="Helvetica",foreground_color_legend = nothing,background_color_legend = nothing, titlefontsize=11, tickfontsize=10, legendfontsize=10,labelfontsize=10,grid=true, tick_direction=:out,size=(400,300))
@@ -70,13 +73,96 @@ deg3w_hewavg = MixtureModel([contDirac,deg3w_hew],[1-p_hew ,p_hew])
 ### Outputs
 if !isdefined(@__MODULE__,:R0only) R0only = false end
 if !isdefined(@__MODULE__,:R0finite) R0finite = false end
+if !isdefined(@__MODULE__,:R0deplete) R0deplete = false end
+if !isdefined(@__MODULE__,:R0assortative) R0assortative = false end
 if R0only
-    if R0finite
-        ssrange=10 .^[1:4]
-    [meanm1sampling(EDTWeibull(Baseline.truncated(Baseline.Weibull(0.08,Baseline.Weibull2(0.08,0.78).θ*21/365),lower=21/365)),iter=100) for i in 1:10000]
+    if any(R0finite)
+        if any(.!R0finite) # generate new: takes ~ 1 hour
+            ssrange=round.(Int,10 .^((10:50)./10))
+            @time R0finite=[quantile([mean(max.(0,ISR_Weibull_finite(ED_3w_msm,ss).-1)) for i in 1:1000],[0.025,0.5,0.975]) for ss in ssrange]
+            
+            Rfvalues=reduce(hcat,R0finite)|>permutedims
+            R0finite_output=[DataFrame([ssrange],[:primarysize]) DataFrame(Rfvalues,string.([0.025,0.5,0.975]))]
+        else # load existing data
+            R0finite_df=CSV.read("output/R0finite_quantile.csv",DataFrame)
+            ssrange=R0finite_df.primarysize
+            Rfvalues=R0finite_df[:,2:end]|>Matrix
+        end
+
+        plot(ssrange,Rfvalues[:,2].*[0.1 0.5],ribbons=((Rfvalues[:,2].-Rfvalues[:,1]).*[0.1 0.5],(Rfvalues[:,3].-Rfvalues[:,2]).*[0.1 0.5]),yaxis=:log,xaxis=:log,xticks=10 .^(1:5),
+yticks=10.0 .^ (-1:3),label="SAR: ".*string.([0.1 0.5]),ylim=(0.1,1000),ylabel="R₀ over MSM sexual network",xlabel="size of primary cases")
+hline!([1],linestyle=:dot,color=:black,label="")|>display
+
+    elseif any(R0deplete)
+        if !isdefined(@__MODULE__,:popsize) popsize = 500000 end
+        if !isdefined(@__MODULE__,:lowlim) lowlim = "" end
+        
+        if any(.!R0deplete) # generate new: takes ~ 1 hour
+            
+            #=
+            pop=rand(deg3w_msm,popsize)
+            @time samples=[sample(pop,Weights(pop),min(100010,popsize),replace=false) for i in 1:1000]
+            pop=nothing
+            samplemat = reduce(hcat, samples)                
+            R0mat=max.(0,samplemat.-1)
+            sizerange=11:min(100000,popsize-10)
+            movavgs=[col[i-10:i+10]|>mean for i in sizerange, col in eachcol(R0mat)]
+            qs=quantile.(eachrow(max.(1e-8,movavgs)), Ref([0.025,0.5,0.975]))
+            Rdvalues=reduce(hcat,qs)|>permutedims
+            =# 
+            rng=MersenneTwister(popsize)
+            if lowlim==""
+                deg=rand(deg3w_msm,popsize) # degree of susceptible pop
+            else
+                deg=rand(truncated(deg3w_msm.untruncated,quantile(deg3w_msm,lowlim),Inf),popsize)
+            end
+            pop=copy(deg)
+            Rmat=Matrix{eltype(deg)}(undef, popsize,1000) # initialize result vector
+            sumdeg=sum(deg)
+            @time begin
+            for j in 1:1000
+                pop.=deg
+                susprop=1.0
+                for i in 1:min(100010,popsize)
+                    sampleid=sample(rng,1:popsize, Weights(deg))
+                    susprop-=pop[sampleid]/sumdeg
+                    Rmat[i,j]=max(0,pop[sampleid]-1)*susprop/(1-pop[sampleid]/sumdeg)
+                    pop[sampleid]=0
+                end
+            end
+            end
+            sizerange=11:min(100000,popsize-10)
+            movavgs=[col[i-10:i+10]|>mean for i in sizerange, col in eachcol(Rmat)]
+            qs=quantile.(eachrow(max.(1e-8,movavgs)), Ref([0.025,0.5,0.975]))
+            Rdvalues=reduce(hcat,qs)|>permutedims    
+ 
+            R0deplete_output=[DataFrame([sizerange],[:outbreaksize]) DataFrame(Rdvalues,string.([0.025,0.5,0.975]))]
+            pop=nothing;deg=nothing;qs=nothing
+        else # load existing data
+            verstring=string(lowlim)*"_"*string(popsize÷1000)
+            R0deplete_df=CSV.read("output/R0sdeplete"*verstring*"k.csv",DataFrame)
+            sizerange=R0deplete_df.outbreaksize
+            Rdvalues=R0deplete_df[:,2:end]|>Matrix
+        end
+        qlines=[Rdvalues[:,2] Rdvalues[:,2].-Rdvalues[:,1] Rdvalues[:,3].-Rdvalues[:,2]]
+                                
+        plot(sizerange,qlines[:,1].*[0.1 0.5],ribbon=(qlines[:,2].*[0.1 0.5],qlines[:,3].*[0.1 0.5]),
+    xaxis=:log,yaxis=:log,xlim=(10,100000),ylim=(0.01,100),xticks=10 .^(1:5),label="SAR: ".*string.([0.1 0.5]),
+    xlabel="cumulative cases", ylabel="effective R over sexual network")
+hline!([1],linestyle=:dot,color=:black,label="")|>display
+
     else
-    sarrange=exp.([-10:0.1:-0.5;-0.4:0.01:0])
-    R0values=[R0(deg3w_msm) √(R0(deg3w_hem)*R0(deg3w_hew))].*sarrange;
+        if R0assortative                                                    
+            R0HS=[√(R0(truncated(deg3w_hem.untruncated,quantile(deg3w_hem,lowlim),Inf))*
+                R0(truncated(deg3w_hew.untruncated,quantile(deg3w_hew,lowlim),Inf))) for lowlim in 0:0.001:0.999]
+            plot(0:0.001:0.999,R0HS.*[0.1 0.5],
+    yaxis=:log,ylim=(0.1,10),label="SAR: ".*string.([0.1 0.5]),legend=:topleft,
+    xlabel="threshold for core group (quantile)", ylabel="R₀ among HS core group")
+    hline!([1],linestyle=:dot,color=:black,label="")|>display
+        else
+            sarrange=exp.([-10:0.1:-0.5;-0.4:0.01:0])
+            R0values=[R0(deg3w_msm) √(R0(deg3w_hem)*R0(deg3w_hew))].*sarrange;
+        end
     end
 else
 
@@ -196,16 +282,16 @@ qs= [quantile(truncated(Weibull(α,κ2θ(α,κ)*inf_period/365);lower=1),0.99) f
 findq(q,qs)=findmin(x->abs(x-q),qs)
 αs=αrange[last.(findq.([15,10],Ref(qs)))]
 nonzeroPoisson(tw::Truncated{<:Weibull},n::Integer)=truncated.(Poisson.(ISR(tw,n,x->1-exp(-x))),lower=1)
-origdeg=rand.(nonzeroPoisson(deg3w_msm,150))#floor.(Int,rand(truncated(deg3w_msm.untruncated,lower=1),100))
-orig_1p=round(nonzeroPoissonquantile(deg3w_msm,0.99),digits=1)#round(quantile(origdeg,0.99),digits=0)
-#degs=[floor.(Int,rand(truncated(Weibull(α,κ2θ(α,κ)*inf_period/365);lower=1),100)) for α in αs, κ in κrange]
-degs=[rand.(nonzeroPoisson(truncated(Weibull(α,κ2θ(α,κ)*inf_period/365);lower=inf_period/365),150)) for α in αs, κ in κrange]
-freqs=[sum.([(==).(1:29);>(29)],Ref(x))./1000 for x in [[origdeg];degs]]
+origdeg=rand.(nonzeroPoisson(deg3w_msm,100000))#floor.(Int,rand(truncated(deg3w_msm.untruncated,lower=1),100))
+orig_1p=nonzeroPoissonquantile(deg3w_msm,0.99)#round(quantile(origdeg,0.99),digits=0)
+roundorig_1p=round(orig_1p,digits=1)
+                                                                degs=[rand.(nonzeroPoisson(truncated(Weibull(α,κ2θ(α,κ)*inf_period/365);lower=inf_period/365),100000)) for α in αs, κ in κrange]
+freqs=[sum.([(==).(1:29);>(29)],Ref(x))./100000 for x in [[origdeg];degs]]
 plot(bar.(freqs, linealpha=0, 
      ylabel="",legend=:none)...,
     xticks=[:none :none :native],
-    ylim=(-0.01,hist_upp),xlim=(-0.4,31),layout=(3,1),size=(400,300),yticks=0:0.05:1,
-label=["baseline, 1%tile: $orig_1p" "1%tile: 10" "1%tile: 15"],legend=:topright,
+    ylim=(-0.01+0.009,hist_upp),xlim=(-0.4+4.8,31),layout=(3,1),size=(400,300),yticks=0:0.01:1,
+label=["baseline, 1%tile: $roundorig_1p" "1%tile: 10" "1%tile: 15"],legend=:topright,
 xlabel = ["" "" "number of partners over 21 days"],bottom_margin=[-2mm -2mm 4mm]) |> display
 
 # R0 vs 1%ile
@@ -215,25 +301,19 @@ sarrange=[0.05,0.1,0.2,0.5]
 κrange=repeat([κ_msm],length(sarrange))
 R0s=repeat(sarrange,inner=length(κrange)÷length(sarrange))'.*max.(1e-15,[R0(truncated(Weibull(α,κ2θ(α,κ)*inf_period/365),lower=inf_period/365),logvalue=false) for α in αrange, κ in κrange])
 xs= [nonzeroPoissonquantile(truncated(Weibull(α,κ2θ(α,κ)*inf_period/365);lower=inf_period/365),0.99,outbreak_iters) for α in αrange, κ in κrange]
-R0capplot=plot(xs,R0s,yaxis=:log,ylim=(0.01,1000),xlim=(0,30), 
+R0capplot=plot(xs,R0s,yaxis=:log,ylim=(0.01,100),xlim=(0,30), 
 xlabel="# of partners over 21 days at 1st percentile", ylabel="R₀ over MSM sexual network",
 legend=:topleft, label="SAR: ".*string.(sarrange'),
 palette=:vikO,color=(1:4)'.*50,linewidth=1.5)
 hline!(R0capplot,[1],linestyle=:dot,color=:black,linealpha=1,label="")
-vline!(R0capplot,[nonzeroPoissonquantile(deg3w_msm,0.99)],color=:green,label="",linealpha=0.5,linestyle=:dash) |> display
+vline!(R0capplot,[orig_1p],color=:green,label="",linealpha=0.5,linestyle=:dash) |> display
 
 # Reduction in R0 for control
-#=Random.seed!(2022)
-αrange=BigFloat.(10 .^(-3:0.1:0))#0.1:0.001:10
-sarrange=[0.05,0.1,0.2,0.5]
-κrange=repeat([κ_msm],length(sarrange))
-R0s=repeat(sarrange,inner=length(κrange)÷length(sarrange))'.*max.(1e-15,[R0(truncated(Weibull(α,κ2θ(α,κ)*inf_period/365),lower=inf_period/365),logvalue=false) for α in αrange, κ in κrange])
-xs= [nonzeroPoissonquantile(truncated(Weibull(α,κ2θ(α,κ)*inf_period/365);lower=inf_period/365),0.99,100000) for α in αrange, κ in κrange]=#
 R0capplot=plot(xs,max.(0,min.(1,1 .- 1 ./R0s)),ylim=(0,1),xlim=(0,30), 
 xlabel="# of partners over 21 days at 1st percentile", ylabel="relative reduction in R₀ for control",
 legend=:topleft, label="SAR: ".*string.(sarrange'),
 palette=:vikO,color=(1:4)'.*50,linewidth=1.5)
-vline!(R0capplot,[nonzeroPoissonquantile(deg3w_msm,0.99)],color=:green,label="",linealpha=0.5,linestyle=:dash)|>display
+vline!(R0capplot,[orig_1p],color=:green,label="",linealpha=0.5,linestyle=:dash)|>display
 
 # Eigenvector analysis
 R_msm=R0(deg3w_msm)#meanm1sampling(edeg3w_msm)
@@ -265,7 +345,7 @@ xlabel="# of partners over 21 days at 1st percentile", ylabel="R₀ over sexual 
 legend=:bottomright, label=[labels "" ""],
 palette=:vikO,color=(repeat([1,4],inner=3))'.*50,linewidth=[1.5 0.5 0.5])
 hline!(R0capplot1,[1],linestyle=:dot,linealpha=1,color=:black,label="")
-vline!(R0capplot1,[nonzeroPoissonquantile(deg3w_msm,0.99)],
+vline!(R0capplot1,[orig_1p],
     color=:green,label="",linealpha=0.5,linestyle=:dash) |> display 
 
 # non-MSM

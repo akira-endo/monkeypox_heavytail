@@ -139,7 +139,7 @@ end
 TWquantile(tw::Truncated{<:Weibull},x::Real)=(1/tw.untruncated.α)*(tw.untruncated.α*log(tw.lower)+log1pexp(tw.untruncated.α*log(tw.untruncated.θ)+log(-log(1-x))-tw.untruncated.α*log(tw.lower)))|>exp
 Distributions.quantile(tw::Truncated{<:Weibull},x::Real)= if tw.lower>0 TWquantile(tw,x) else quantile(tw.untruncated,x) end
 Distributions.truncated(d::UnivariateDistribution; lower)=truncated(d, lower, Inf)
-function nonzeroPoissonquantile(d::UnivariateDistribution,x::Real, samplesize=10000) # quantile of Poisson(x) where x ~ tw
+function nonzeroPoissonquantile(d::UnivariateDistribution,x::Real, samplesize=50000) # quantile of Poisson(x) where x ~ tw
     zeroprob=mean((exp∘(-)),(rand(d,samplesize)))
     quantile(d,zeroprob+(1-zeroprob)*x)
 end
