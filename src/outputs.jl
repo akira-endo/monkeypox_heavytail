@@ -282,11 +282,13 @@ qs= [quantile(truncated(Weibull(α,κ2θ(α,κ)*inf_period/365);lower=1),0.99) f
 findq(q,qs)=findmin(x->abs(x-q),qs)
 αs=αrange[last.(findq.([15,10],Ref(qs)))]
 nonzeroPoisson(tw::Truncated{<:Weibull},n::Integer)=truncated.(Poisson.(ISR(tw,n,x->1-exp(-x))),lower=1)
+
 origdeg=rand.(nonzeroPoisson(deg3w_msm,100000))#floor.(Int,rand(truncated(deg3w_msm.untruncated,lower=1),100))
 orig_1p=nonzeroPoissonquantile(deg3w_msm,0.99)#round(quantile(origdeg,0.99),digits=0)
 roundorig_1p=round(orig_1p,digits=1)
                                                                 degs=[rand.(nonzeroPoisson(truncated(Weibull(α,κ2θ(α,κ)*inf_period/365);lower=inf_period/365),100000)) for α in αs, κ in κrange]
 freqs=[sum.([(==).(1:29);>(29)],Ref(x))./100000 for x in [[origdeg];degs]]
+
 plot(bar.(freqs, linealpha=0, 
      ylabel="",legend=:none)...,
     xticks=[:none :none :native],
@@ -336,7 +338,6 @@ label=["MSM to non-MSM mixing: " "" "" ""].*string.(prange'),legend=:topleft) |>
 αrange=BigFloat.(10 .^(-3:0.05:0))#0.04:0.01:10
 κrange=repeat([0.77,0.66,0.88],2)
 R0s1=repeat([0.1,0.5],inner=length(κrange)÷2)'.*max.(1e-15,[R0(truncated(Weibull(α,κ2θ(α,κ)*inf_period/365),lower=inf_period/365),logvalue=false) for α in αrange, κ in κrange])
-#xs= [quantile(truncated(Weibull(α,κ2θ(α,κ)*inf_period/365);lower=1),0.99,100) for α in αrange, κ in κrange]
 xs= [nonzeroPoissonquantile(truncated(Weibull(α,κ2θ(α,κ)*inf_period/365);lower=inf_period/365),0.99,outbreak_iters) for α in αrange, κ in κrange]
 
 labels="κ: ".*(x->string(x[1])*"–"*string(x[2]))(κrange[2:3])
