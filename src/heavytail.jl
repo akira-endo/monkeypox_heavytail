@@ -192,8 +192,8 @@ meanm1sampling(d;iter=100000)=mean(max.(0,rand(d,iter).-1)) # evaluates E[max(0,
 
 function eigenNGM(SAR,relR,p_m2o,R_msm,R_hem,R_hew,r_hem,r_hew)
     ngm=[SAR*R_msm*(1-p_m2o) 0 0 0
-        SAR*R_msm*p_m2o/2 0 SAR*R_hew SAR*r_hew/2
-        SAR*R_msm*p_m2o/2 SAR*R_hem 0 SAR*r_hem/2
+        0 0 SAR*R_hew SAR*r_hew/2
+        SAR*R_msm*p_m2o SAR*R_hem 0 SAR*r_hem/2
         relR*R_msm relR*R_msm relR*R_msm relR*R_msm]
     ev=eigen(ngm)
     (value=ev.values[end],vector=normalize(ev.vectors[:,end],1))
